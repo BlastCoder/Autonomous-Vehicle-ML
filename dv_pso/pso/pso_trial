@@ -1,0 +1,145 @@
+import random
+import time
+
+def clamp(value, min_val, max_val):
+    """Clamp 'value' to the range [min_val, max_val]."""
+    return max(min_val, min(value, max_val))
+
+class Particle:
+    def __init__(self, n_dimensions, boundaries, cost_func):
+        """
+        Each boundary is the maximum boundary for that dimension (0.0 is min).
+        """
+        self.position = []
+        self.velocity = []
+        self.best_position = []
+        self.best_eval = float('inf')
+
+        # --- Initialization ---
+        for i in range(n_dimensions):
+            pos = random.uniform(0.0, boundaries[i])
+            vel = random.uniform(-boundaries[i], boundaries[i])
+            self.position.append(pos)
+            self.velocity.append(vel)
+
+        # Evaluate once at init
+        self.best_position = self.position[:]
+        self.best_eval = cost_func(self.position)
+
+    def update_velocity(self, new_velocity, boundaries):
+        """Clamp each dimension’s velocity within [-boundary, boundary]."""
+        for i in range(len(self.velocity)):
+            self.velocity[i] = clamp(new_velocity[i], -boundaries[i], boundaries[i])
+
+    def update_position(self, new_position, boundaries):
+        """Clamp each dimension’s position to [0, boundary]."""
+        for i in range(len(self.position)):
+            self.position[i] = clamp(new_position[i], 0.0, boundaries[i])
+
+    def try_update_best(self, cost_func):
+        """Update local best if the new position is better."""
+        current_eval = cost_func(self.position)
+        if current_eval < self.best_eval:
+            self.best_eval = current_eval
+            self.best_position = self.position[:]
+
+def optimize(cost_func, n_dimensions, boundaries, n_particles, n_iterations,
+             w, cp, cg, verbose=False):
+    """
+    Particle Swarm Optimization (PSO).
+    Returns the best solution found and its cost.
+    """
+
+    # 1) Initialize swarm
+    particles = [Particle(n_dimensions, boundaries, cost_func)
+                 for _ in range(n_particles)]
+
+    # 2) Get initial global best
+    global_solution = particles[0].best_position[:]
+    gs_eval = particles[0].best_eval
+    for p in particles:
+        if p.best_eval < gs_eval:
+            global_solution = p.best_position[:]
+            gs_eval = p.best_eval
+
+    # Keep track of global best over iterations
+    gs_history = [global_solution]
+    gs_eval_history = [gs_eval]
+
+    if verbose:
+        print()
+        print("------------------ PARAMETERS -----------------")
+        print(f"Number of dimensions: {n_dimensions}")
+        print(f"Number of iterations: {n_iterations}")
+        print(f"Number of particles: {n_particles}")
+        print(f"w: {w}\tcp: {cp}\tcg: {cg}")
+        print()
+        print("----------------- OPTIMIZATION ----------------")
+        print("Population initialization...")
+        print("Start of optimization...")
+
+    start_time = time.time_ns()
+
+    # 3) Main PSO loop
+    for iteration in range(n_iterations):
+        for p in particles:
+            # Random coefficients for the velocity update
+            rp = random.random()
+            rg = random.random()
+
+            # Velocity update
+            new_velocity = []
+            for i in range(n_dimensions):
+                v_i = (w * p.velocity[i] +
+                       cp * rp * (p.best_position[i] - p.position[i]) +
+                       cg * rg * (global_solution[i] - p.position[i]))
+                new_velocity.append(v_i)
+
+            p.update_velocity(new_velocity, boundaries)
+
+            # Position update
+            new_position = []
+            for i in range(n_dimensions):
+                new_position.append(p.position[i] + p.velocity[i])
+            p.update_position(new_position, boundaries)
+
+            # Check/improve local best
+            p.try_update_best(cost_func)
+
+            # Check/improve global best
+            if p.best_eval < gs_eval:
+                global_solution = p.best_position[:]
+                gs_eval = p.best_eval
+
+        # Save iteration data
+        gs_eval_history.append(gs_eval)
+        gs_history.append(global_solution[:])
+
+        # Optional: progress bar
+        if verbose:
+            printProgressBar(iteration + 1, n_iterations,
+                             prefix='Progress:', suffix='Complete', length=50)
+
+    finish_time = time.time_ns()
+    elapsed_time = (finish_time - start_time) / 1e9
+
+    if verbose:
+        print("End of optimization...")
+        print()
+        print("------------------- RESULTS -------------------")
+        print(f"Optimization elapsed time: {elapsed_time:.2f} s")
+        print(f"Best solution found: {global_solution}")
+        print(f"Solution evaluation: {gs_eval:.5f}")
+
+    return global_solution, gs_eval, gs_history, gs_eval_history
+
+def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█', printEnd="\r"):
+    """
+    Simple in-terminal progress bar.
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filled_length = int(length * iteration // total)
+    bar = fill * filled_length + '-' * (length - filled_length)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end=printEnd)
+    if iteration == total:
+        print()
